@@ -1,0 +1,4 @@
+venv
+cifar-100-python/
+logs
+env*
