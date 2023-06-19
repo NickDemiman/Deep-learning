@@ -2,3 +2,7 @@ venv
 cifar-100-python/
 logs
 env*
+content
+__pycache__
+~*
+media
