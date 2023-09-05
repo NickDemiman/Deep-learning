@@ -59,31 +59,30 @@ class DenoisingAE(nn.Module):
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 sess = ort.InferenceSession("denoising_net.onnx")
-inputs = sess.get_inputs()
+# inputs = sess.get_inputs()
 #ниже указать ранее сгенерированный bot_father'ом токен вашего бота
 bot = telebot.TeleBot('6387696681:AAFwb3KJ_Ol3re6_rhikFKsly_pWS6HhP8I')
 
-from ffmpeg import FFmpeg
+import ffmpeg
+import os
+
 
 @bot.message_handler(content_types=['voice'])
 def get_message(message):
     file_info = bot.get_file(message.voice.file_id)
     downloaded_file = bot.download_file(file_info.file_path)
+    
     with open('new_file.ogg', 'wb') as new_file:
         new_file.write(downloaded_file)
+        
+    os.system('C:/Users/hae19/ffmpeg.exe -y -i new_file.ogg -ac 1 -ar 16000 audio.wav')
     
-    ffmpeg = (
-        FFmpeg()
-        .option("y")
-        .input("new_file.ogg")
-        .filter(channel_layout="stereo")
-        .output(
-            "ouptut.mp4"
-        )
-    )
-    
-    ffmpeg.execute()
-    # sess.run(None, {'src': torch.rand(1, 2, Zxx.shape[0], device=device)})[0]
-    bot.send_audio(message.chat.id, audio=open('output.mp4', 'rb'))
+    fs, data = wavfile.read('audio.wav')
+    data = data / (2**16-1)
+    data[0] = 1
+    print(data.shape)
+    print(sess._inputs_meta)
+    # sess.run(None, {'input': torch.rand(1, 2, )})[0]
+    bot.send_audio(message.chat.id, audio=open('output.wav', 'rb'))
     
 bot.polling(none_stop=True, interval=0)
