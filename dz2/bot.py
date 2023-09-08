@@ -58,7 +58,7 @@ class DenoisingAE(nn.Module):
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-sess = ort.InferenceSession("denoising_net.onnx")
+# sess = ort.InferenceSession("denoising_net.onnx")
 # inputs = sess.get_inputs()
 #ниже указать ранее сгенерированный bot_father'ом токен вашего бота
 bot = telebot.TeleBot('6387696681:AAFwb3KJ_Ol3re6_rhikFKsly_pWS6HhP8I')
@@ -75,14 +75,43 @@ def get_message(message):
     with open('new_file.ogg', 'wb') as new_file:
         new_file.write(downloaded_file)
         
-    os.system('C:/Users/hae19/ffmpeg.exe -y -i new_file.ogg -ac 1 -ar 16000 audio.wav')
+    os.system('C:/Users/hae19/ffmpeg.exe -y -i new_file.ogg -loglevel quiet -ac 1 -ar 16000 audio.wav')
     
-    fs, data = wavfile.read('audio.wav')
-    data = data / (2**16-1)
-    data[0] = 1
-    print(data.shape)
-    print(sess._inputs_meta)
-    # sess.run(None, {'input': torch.rand(1, 2, )})[0]
+    fs, data_noised = wavfile.read('audio.wav')
+    data_noised = data_noised / (2**16-1)
+    
+    device = torch.device('cpu')
+    model = torch.load('denoise.pt', map_location=device)
+    model.eval()
+    
+    # noise = model(data)
+    _, _, Zxx = signal.stft(data_noised, fs=fs, nperseg=512)
+    _, xrec = signal.istft(Zxx, fs)
+    
+    X = np.concatenate([np.real(Zxx).T[:,:,None],
+                    np.imag(Zxx).T[:,:,None]], axis=-1)
+    normalization = X.reshape(-1, 2).std()
+    X /= normalization
+    tensor_x = torch.Tensor(np.transpose(X, [0, 2, 1])) # channels first
+    pred = []
+    batch_size = 128
+    for i in tqdm(range(tensor_x.shape[0]//batch_size+1)):
+        preds = model(tensor_x[i*batch_size:(i+1)*batch_size].to(device))
+        pred.append(np.transpose(preds.detach().cpu().numpy(),
+                                [0, 2, 1])*normalization)
+    pred = np.concatenate(pred, axis=0)
+    _, xrec = signal.istft((pred[:,:,0]+pred[:,:,1]*1j).T, fs)
+    xrec = data_noised - xrec[:data_noised.size]
+    
+    # preds = model(tensor_x.to(device)).detach().cpu().numpy()
+    # _, xrec = signal.istft((preds[:,:,0]+preds[:,:,1]*1j).T, fs)
+    # xrec = data_noised - xrec[:data_noised.size]
+    # print(preds)
+    
+    audio = Audio(xrec, rate=fs)
+    
+    with open('output.wav', 'wb') as f:
+        f.write(audio.data)
     bot.send_audio(message.chat.id, audio=open('output.wav', 'rb'))
     
 bot.polling(none_stop=True, interval=0)
